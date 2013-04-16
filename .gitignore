@@ -1,0 +1,5 @@
+output.pdf
+*.pyc
+*.json
+~*
+.idea/*
