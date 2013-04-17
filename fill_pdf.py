@@ -12,6 +12,10 @@ from PIL import Image
 import zipfile
 
 
+class StudentRejectedException(Exception):
+    pass
+
+
 def append_pdf(pdf_in_path, pdf_out):
     pdf_in = file_to_pdf(pdf_in_path)
     # pdf_in = PdfFileReader(file(pdf_in_path, 'rb'))
@@ -65,6 +69,7 @@ def file_to_pdf(file_in, is_buffer=False):
         # insert images in a pdf and append it
         for file_name in files_name:
             pdf = file_to_pdf(zf.read(file_name, 'rb'), is_buffer=True)
+            # append it to the resulting pdf
             for page_num in range(pdf.numPages):
                 output.addPage(pdf.getPage(page_num))
 
@@ -73,7 +78,7 @@ def file_to_pdf(file_in, is_buffer=False):
         output.write(output_stream)
         return PdfFileReader(output_stream)
 
-    raise IndexError('lal')
+    raise StudentRejectedException()
 
 
 def fill_subscription_form(data, base_dir):
