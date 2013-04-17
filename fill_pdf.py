@@ -76,8 +76,6 @@ def file_to_pdf(file_in, is_buffer=False):
     raise IndexError('lal')
 
 
-
-
 def fill_subscription_form(data, base_dir):
     """
     fill the subscription form (file 'empty_form.pdf') with user data.
@@ -151,8 +149,6 @@ def fill_pdf(data, pdf_out='output.pdf'):
     first_forms = ('Code of Conduct.pdf', 'Parent Agreement.pdf',
                    'Assignment of Laptop.pdf', 'Media Consent Form.pdf')
 
-
-
     # set the first page as the (automagically filled) subscription form
     subscription_form = fill_subscription_form(_data, base_dir)
     _output.addPage(subscription_form)
@@ -172,6 +168,7 @@ def fill_pdf(data, pdf_out='output.pdf'):
     output_stream = file(pdf_out, 'wb')
     _output.write(output_stream)
     output_stream.close()
+
 
 if __name__ == '__main__':
     if len(sys.argv) <= 1:
