@@ -5,11 +5,12 @@ from reportlab.lib.pagesizes import A4
 from reportlab.lib.utils import ImageReader
 import json
 import os
-from os.path import abspath, join, dirname, isfile
+from os.path import abspath, join, dirname, isfile, isdir
 import sys
 import magic
 from PIL import Image
 import zipfile
+import argparse
 
 
 class StudentRejectedException(Exception):
@@ -36,9 +37,11 @@ def file_to_pdf(file_in, is_buffer=False):
         mimetype = magic.from_file(file_in, mime=True)
 
     if mimetype == 'application/pdf':
-        return PdfFileReader(file(file_in, 'rb'))
+        if is_buffer:
+            return PdfFileReader(file_in)
+        return PdfFileReader(open(file_in, 'rb'))
 
-    if mimetype.split('/')[0] == 'image':
+    if mimetype and mimetype.split('/')[0] == 'image':
         image = Image.open(file_in)
         packet = StringIO.StringIO()
         can = canvas.Canvas(packet, A4)
@@ -120,7 +123,7 @@ def fill_subscription_form(data, base_dir):
     can.drawString(60, 116.5, data['School']['Reference Professor'])
 
     # draw the photo
-    photo = data['profile']['photo'].split('/')[-1]
+    photo = data['profile'].get('photo', 'lol/profile.jpg').split('/')[-1]
     photo = join(base_dir, photo)
     can.drawImage(photo, 354.5, 526.7, 137, 152)
     can.save()
@@ -135,7 +138,7 @@ def fill_subscription_form(data, base_dir):
     return page
 
 
-def fill_pdf(data, pdf_out='output.pdf'):
+def fill_pdf(data, output_dir=None):
     """
     'empty_form.pdf' must be in the same directory of this script
     the script must be called with the target 'data.json' as the only argument
@@ -147,6 +150,14 @@ def fill_pdf(data, pdf_out='output.pdf'):
     _output = PdfFileWriter()
     base_dir = dirname(abspath(data))
 
+    output_dir = abspath(output_dir) or dirname(abspath(__file__))
+    student_name = '{} {}'.format(_data['profile']['first_name'],
+                                  _data['profile']['last_name'])
+    output_file = join(output_dir, student_name + '.pdf')
+    if output_file in os.listdir(output_dir):  # just a simple check
+        output_file = '{} {}{}'.format(student_name,
+                                       _data['profile']['email'], '.pdf')
+
     # the resulting pdf will be:
     # subscription form,
     # other (ordered) important forms,
@@ -154,11 +165,18 @@ def fill_pdf(data, pdf_out='output.pdf'):
     first_forms = ('Code of Conduct.pdf', 'Parent Agreement.pdf',
                    'Assignment of Laptop.pdf', 'Media Consent Form.pdf')
 
+    signed_forms_dir = join(base_dir, 'signed-forms')
+
+    # make sure that all the "first_forms" are there.
+    for f in first_forms:
+        if not os.path.exists(join(signed_forms_dir, f)):
+            print '\n{} did not submit {}. Skipping PDF generation.'\
+                .format(student_name, f)
+            return
+
     # set the first page as the (automagically filled) subscription form
     subscription_form = fill_subscription_form(_data, base_dir)
     _output.addPage(subscription_form)
-
-    signed_forms_dir = join(base_dir, 'signed-forms')
 
     # append all the important forms
     for form in first_forms:
@@ -168,17 +186,68 @@ def fill_pdf(data, pdf_out='output.pdf'):
                       if isfile(join(signed_forms_dir, pdf))
                       and not pdf in first_forms]
     for pdf in remaining_pdfs:
-        append_pdf(join(signed_forms_dir, pdf), _output)
+        try:
+            append_pdf(join(signed_forms_dir, pdf), _output)
+        except StudentRejectedException:
+            print "\n{0} submitted something ({1}) " \
+                  "that I don't like very much\n".format(student_name, pdf)
 
-    output_stream = file(pdf_out, 'wb')
+    output_stream = file(output_file, 'wb')
     _output.write(output_stream)
     output_stream.close()
 
 
+def fill_recursive(directory, output_dir, verbose=False):
+    for f in os.listdir(directory):
+        _file = join(directory, f)
+
+        if isfile(_file) and f == 'data.json':
+            if verbose:
+                print '\n+++ Elaborating file {}\n'.format(_file)
+                # print '* Please ignore the warnings below :-) *'
+            try:
+                fill_pdf(_file, output_dir)
+            except KeyError, msg:
+                print 'Missing json field in {0}. PDF generation skipped. ' \
+                      'Message: {1}'.format(_file, msg)
+            except Exception:
+                print 'Something went wrong with {0}'.format(_file)
+
+        if isdir(_file):
+            if verbose:
+                print 'Checking dir {}'.format(_file)
+            fill_recursive(_file, output_dir, verbose=verbose)
+
 if __name__ == '__main__':
+    parser = argparse.ArgumentParser(description='WebValley PDF generator')
+    parser.add_argument('-r', '--recursive', help='search recursively for data',
+                        nargs='?')
+    parser.add_argument('-o', '--output-dir', help='set output directory',
+                        nargs='?')
+    parser.add_argument('data', help='data.json path', nargs='*')
+    parser.add_argument('-v', '--verbose', help='verbose output',
+                        action='store_true')
+
+    args = parser.parse_args()
+
     if len(sys.argv) <= 1:
-        print '\n >>> Gimme the fucking data.json! <<<\n'
-        sys.exit(1)
-    out = 'output.pdf' if len(sys.argv) < 3 else sys.argv[2]
-    fill_pdf(sys.argv[1], out)
-    print 'Done.'
+        parser.print_help()
+        sys.exit(0)
+
+    if args.output_dir:
+        if not os.path.exists(abspath(args.output_dir)):
+            print 'Error: destination dir {} does not exist.'\
+                .format(abspath(args.output_dir))
+            sys.exit(1)
+
+    if args.recursive is not None:
+        if not args.recursive or not os.path.exists(args.recursive):
+            print '>>> Gimme a VALID dir! <<<'
+            sys.exit(1)
+        fill_recursive(args.recursive, args.output_dir, args.verbose)
+
+    if args.data is not None:
+        for json_path in args.data:
+            fill_pdf(json_path, args.output_dir or None)
+
+    print '\nDone!\n'
