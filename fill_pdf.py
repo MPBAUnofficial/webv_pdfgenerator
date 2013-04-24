@@ -9,7 +9,7 @@ from os.path import abspath, join, dirname, isfile, isdir, exists, basename
 import sys
 import magic
 from PIL import Image
-import zipfile
+import zipfile, rarfile
 import argparse
 
 
@@ -64,10 +64,14 @@ def file_to_pdf(file_in, is_buffer=False):
         packet.seek(0)
         return PdfFileReader(packet)
 
-    if mimetype == 'application/zip':
+    if mimetype == 'application/zip' or 'application/x-rar':
         # todo: handle (using recursion) zip files containing folders
-        zf = zipfile.ZipFile(file_in)
-        files_name = [img.filename for img in zf.filelist]
+        if mimetype == 'application/zip':
+            zf = zipfile.ZipFile(file_in)
+            files_name = [img.filename for img in zf.filelist]
+        else:
+            zf = rarfile.RarFile(file_in)
+            files_name = zf.namelist()
 
         # create a void pdf
         # (probably there is a better way to accomplish
@@ -173,7 +177,8 @@ def fill_pdf(data, output_dir=None, strict=False):
     _output = PdfFileWriter()
     base_dir = dirname(abspath(data))
 
-    output_dir = abspath(output_dir) or dirname(abspath(__file__))
+    output_dir = abspath(output_dir) if output_dir is not None \
+        else dirname(abspath(__file__))
     student_name = '{} {}'.format(_data['profile']['first_name'],
                                   _data['profile']['last_name'])
     output_file = join(output_dir, student_name + '.pdf')
@@ -269,7 +274,6 @@ if __name__ == '__main__':
 
     args = parser.parse_args()
 
-
     errors = []
     if len(sys.argv) <= 1:
         parser.print_help()
@@ -290,13 +294,16 @@ if __name__ == '__main__':
 
     if args.data is not None:
         for json_path in args.data:
+            # noinspection PyBroadException
             try:
                 fill_pdf(json_path, args.output_dir or None, args.strict)
-            except Exception:
+            except Exception, e:
+                if args.verbose:
+                    print 'Error: {0}'.format(e.message)
                 errors.append(dirname(json_path))
 
     if errors:
-        path = join(args.output_dir, 'errors.log')
+        path = join(args.output_dir or abspath(dirname(__file__)), 'errors.log')
         with open(path, 'w') as f:
             f.write('\n'.join(errors))
 
