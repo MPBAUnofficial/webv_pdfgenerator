@@ -347,5 +347,3 @@ if __name__ == '__main__':
                     'unsupported_files_found.log')
         with open(path, 'w') as f:
             f.write('\n'.join(bastards))
-
-    print '\nDone!\n'
