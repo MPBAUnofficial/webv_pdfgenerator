@@ -6,13 +6,14 @@ from reportlab.lib.pagesizes import A4
 from reportlab.lib.utils import ImageReader
 import json
 import os
-from os import devnull
 from os.path import abspath, join, dirname, isfile, isdir, exists, basename
 import sys
 import magic
 from PIL import Image
-import zipfile, rarfile
+import zipfile
+import rarfile
 import argparse
+import contextlib
 
 
 class StudentRejectedException(Exception):
@@ -74,7 +75,7 @@ def archive_to_pdf(path, mimetype):
     # return the resulting pdf
     output_stream = StringIO.StringIO()
     output.write(output_stream)
-    return PdfFileReader(output_stream, strict=False, warndest=os.devnull)
+    return PdfFileReader(output_stream, strict=False)
 
 
 def file_to_pdf(file_in, is_buffer=False):
@@ -91,8 +92,9 @@ def file_to_pdf(file_in, is_buffer=False):
 
     if mimetype == 'application/pdf':
         if is_buffer:
-            return PdfFileReader(file_in, strict=False, warndest=os.devnull)
-        return PdfFileReader(open(file_in, 'rb'), strict=False, warndest=os.devnull)
+            return PdfFileReader(file_in, strict=False)
+        return PdfFileReader(open(file_in, 'rb'),
+                             strict=False)
 
     if mimetype and mimetype.split('/')[0] == 'image':
         image = Image.open(file_in)
@@ -110,7 +112,7 @@ def file_to_pdf(file_in, is_buffer=False):
         can.drawImage(ImageReader(image), left, top, preserveAspectRatio=True)
         can.save()
         packet.seek(0)
-        return PdfFileReader(packet, strict=False, warndest=os.devnull)
+        return PdfFileReader(packet, strict=False)
 
     if mimetype in ('application/zip', 'application/x-rar'):
         return archive_to_pdf(file_in, mimetype)
@@ -123,7 +125,7 @@ def fill_subscription_form(data, base_dir):
     fill the subscription form (file 'empty_form.pdf') with user data.
     """
     empty_form = PdfFileReader(open('empty_form.pdf', 'rb'),
-                               strict=False, warndest=os.devnull)
+                               strict=False)
     packet = StringIO.StringIO()
     can = canvas.Canvas(packet, A4)
 
@@ -183,7 +185,7 @@ def fill_subscription_form(data, base_dir):
 
     # move to the beginning of the StringIO buffer
     packet.seek(0)
-    new_pdf = PdfFileReader(packet, strict=False, warndest=os.devnull)
+    new_pdf = PdfFileReader(packet, strict=False)
 
     # generate the pdf
     page = empty_form.getPage(0)
@@ -292,7 +294,8 @@ def fill_recursive(directory, output_dir, verbose=False, strict=False):
                 print 'Checking dir {}'.format(_file)
             fill_recursive(_file, output_dir, verbose=verbose, strict=strict)
 
-if __name__ == '__main__':
+
+def main():
     parser = argparse.ArgumentParser(description='WebValley PDF generator')
     parser.add_argument('-r', '--recursive', dest='directory',
                         help='search recursively for data', nargs='?')
@@ -306,9 +309,6 @@ if __name__ == '__main__':
                              ' required forms')
 
     args = parser.parse_args()
-
-    errors = []  # generic errors
-    bastards = []  # people who submitted unsupported files (.doc, .odt, ...)
 
     if len(sys.argv) <= 1:
         parser.print_help()
@@ -347,3 +347,22 @@ if __name__ == '__main__':
                     'unsupported_files_found.log')
         with open(path, 'w') as f:
             f.write('\n'.join(bastards))
+
+@contextlib.contextmanager
+def nostderr():
+    """
+    Prevent pyPdf from spamming on the stderr.
+    """
+    save_stderr = sys.stdout
+    sys.stderr = StringIO.StringIO()
+    yield
+    sys.stderr = save_stderr
+
+
+if __name__ == '__main__':
+
+    errors = []  # generic errors
+    bastards = []  # people who submitted unsupported files (.doc, .odt, ...)
+
+    with nostderr():
+        main()
