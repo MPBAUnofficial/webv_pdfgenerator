@@ -1,3 +1,4 @@
+#!/usr/bin/env python
 from PyPDF2 import PdfFileWriter, PdfFileReader
 import StringIO
 from reportlab.pdfgen import canvas
@@ -43,8 +44,8 @@ def file_to_pdf(file_in, is_buffer=False):
 
     if mimetype == 'application/pdf':
         if is_buffer:
-            return PdfFileReader(file_in)
-        return PdfFileReader(open(file_in, 'rb'))
+            return PdfFileReader(file_in, strict=False)
+        return PdfFileReader(open(file_in, 'rb'), strict=False)
 
     if mimetype and mimetype.split('/')[0] == 'image':
         image = Image.open(file_in)
@@ -62,7 +63,7 @@ def file_to_pdf(file_in, is_buffer=False):
         can.drawImage(ImageReader(image), left, top, preserveAspectRatio=True)
         can.save()
         packet.seek(0)
-        return PdfFileReader(packet)
+        return PdfFileReader(packet, strict=False)
 
     if mimetype == 'application/zip' or 'application/x-rar':
         # todo: handle (using recursion) zip files containing folders
@@ -70,6 +71,8 @@ def file_to_pdf(file_in, is_buffer=False):
             zf = zipfile.ZipFile(file_in)
             files_name = [img.filename for img in zf.filelist]
         else:
+            if not rarfile.is_rarfile(file_in):
+                raise StudentRejectedException()
             zf = rarfile.RarFile(file_in)
             files_name = zf.namelist()
 
@@ -88,7 +91,7 @@ def file_to_pdf(file_in, is_buffer=False):
         # return the all-inclusive pdf
         output_stream = StringIO.StringIO()
         output.write(output_stream)
-        return PdfFileReader(output_stream)
+        return PdfFileReader(output_stream, strict=False)
 
     raise StudentRejectedException()
 
@@ -97,7 +100,7 @@ def fill_subscription_form(data, base_dir):
     """
     fill the subscription form (file 'empty_form.pdf') with user data.
     """
-    empty_form = PdfFileReader(open('empty_form.pdf', 'rb'))
+    empty_form = PdfFileReader(open('empty_form.pdf', 'rb'), strict=False)
     packet = StringIO.StringIO()
     can = canvas.Canvas(packet, A4)
 
@@ -141,7 +144,7 @@ def fill_subscription_form(data, base_dir):
             path = join(base_dir, 'profile.{0}'.format(ext))
             if exists(path):
                 return path
-        raise IndexError('Where the hell is the profile photo?')
+        return None  # wtf, dude
 
     # try to guess the path of the profile picture
     if 'photo' in data['profile']:
@@ -149,13 +152,15 @@ def fill_subscription_form(data, base_dir):
     else:
         photo = guess_photo_path()
 
-    photo = join(base_dir, photo)
-    can.drawImage(photo, 354.5, 526.7, 137, 152)
+    if photo is not None:
+        photo = join(base_dir, photo)
+        can.drawImage(photo, 354.5, 526.7, 137, 152)
+
     can.save()
 
     # move to the beginning of the StringIO buffer
     packet.seek(0)
-    new_pdf = PdfFileReader(packet)
+    new_pdf = PdfFileReader(packet, strict=False)
 
     # generate the pdf
     page = empty_form.getPage(0)
