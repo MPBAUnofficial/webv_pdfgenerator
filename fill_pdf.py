@@ -6,6 +6,7 @@ from reportlab.lib.pagesizes import A4
 from reportlab.lib.utils import ImageReader
 import json
 import os
+from os import devnull
 from os.path import abspath, join, dirname, isfile, isdir, exists, basename
 import sys
 import magic
@@ -23,17 +24,63 @@ class StudentRejectedException(Exception):
 
 def append_pdf(pdf_in_path, pdf_out):
     """
-
+    Merge two pdf files into one.
     """
     pdf_in = file_to_pdf(pdf_in_path)
     for page_num in range(pdf_in.numPages):
         pdf_out.addPage(pdf_in.getPage(page_num))
 
 
+def archive_to_pdf(path, mimetype):
+    """
+    Helper method for file_to_pdf.
+    Scan an archive and process all the files contained into it,
+    avoiding (obviously) directories.
+    """
+
+    def zf_isdir(zf, name):
+        """
+        Return true if the given object inside the zipfile is a directory.
+        (using os.listdir with zipfiles is not possible).
+        """
+        name = name.replace('\\', '/')  # fucking Windows
+        return any(x.replace('\\', '/').startswith("%s/" % name.rstrip("/"))
+                   for x in zf.namelist())
+
+    files = []  # the files (not dirs) contained into the archive
+
+    if mimetype == 'application/zip':
+        with zipfile.ZipFile(path, 'r') as zf:
+            for obj in zf.namelist():
+                if not zf_isdir(zf, obj):
+                    files.append(zf.read(obj, 'rb'))
+    elif mimetype == 'application/x-rar':
+        with rarfile.RarFile(path, 'r') as rf:
+            for obj in rf.namelist():
+                if not zf_isdir(rf, obj):
+                    files.append(rf.read(obj, 'rb'))
+
+    # create a void pdf
+    output = PdfFileWriter()
+
+    # insert images in a pdf and append it
+    for f in files:
+        pdf = file_to_pdf(f, is_buffer=True)
+
+        # append it to the resulting pdf
+        for page_num in range(pdf.numPages):
+            output.addPage(pdf.getPage(page_num))
+
+    # return the resulting pdf
+    output_stream = StringIO.StringIO()
+    output.write(output_stream)
+    return PdfFileReader(output_stream, strict=False, warndest=os.devnull)
+
+
 def file_to_pdf(file_in, is_buffer=False):
     """
     given a generic file (image, pdf, archive) return the PDF containing that
-    file (adapted in order to fill properly)
+    file (adapted in order to fill properly).
     """
 
     if is_buffer:
@@ -44,8 +91,8 @@ def file_to_pdf(file_in, is_buffer=False):
 
     if mimetype == 'application/pdf':
         if is_buffer:
-            return PdfFileReader(file_in, strict=False)
-        return PdfFileReader(open(file_in, 'rb'), strict=False)
+            return PdfFileReader(file_in, strict=False, warndest=os.devnull)
+        return PdfFileReader(open(file_in, 'rb'), strict=False, warndest=os.devnull)
 
     if mimetype and mimetype.split('/')[0] == 'image':
         image = Image.open(file_in)
@@ -63,35 +110,10 @@ def file_to_pdf(file_in, is_buffer=False):
         can.drawImage(ImageReader(image), left, top, preserveAspectRatio=True)
         can.save()
         packet.seek(0)
-        return PdfFileReader(packet, strict=False)
+        return PdfFileReader(packet, strict=False, warndest=os.devnull)
 
-    if mimetype == 'application/zip' or 'application/x-rar':
-        # todo: handle (using recursion) zip files containing folders
-        if mimetype == 'application/zip':
-            zf = zipfile.ZipFile(file_in)
-            files_name = [img.filename for img in zf.filelist]
-        else:
-            if not rarfile.is_rarfile(file_in):
-                raise StudentRejectedException()
-            zf = rarfile.RarFile(file_in)
-            files_name = zf.namelist()
-
-        # create a void pdf
-        # (probably there is a better way to accomplish
-        # that, but atm I'm quite asleep)
-        output = PdfFileWriter()
-
-        # insert images in a pdf and append it
-        for file_name in files_name:
-            pdf = file_to_pdf(zf.read(file_name, 'rb'), is_buffer=True)
-            # append it to the resulting pdf
-            for page_num in range(pdf.numPages):
-                output.addPage(pdf.getPage(page_num))
-
-        # return the all-inclusive pdf
-        output_stream = StringIO.StringIO()
-        output.write(output_stream)
-        return PdfFileReader(output_stream, strict=False)
+    if mimetype in ('application/zip', 'application/x-rar'):
+        return archive_to_pdf(file_in, mimetype)
 
     raise StudentRejectedException()
 
@@ -100,7 +122,8 @@ def fill_subscription_form(data, base_dir):
     """
     fill the subscription form (file 'empty_form.pdf') with user data.
     """
-    empty_form = PdfFileReader(open('empty_form.pdf', 'rb'), strict=False)
+    empty_form = PdfFileReader(open('empty_form.pdf', 'rb'),
+                               strict=False, warndest=os.devnull)
     packet = StringIO.StringIO()
     can = canvas.Canvas(packet, A4)
 
@@ -160,7 +183,7 @@ def fill_subscription_form(data, base_dir):
 
     # move to the beginning of the StringIO buffer
     packet.seek(0)
-    new_pdf = PdfFileReader(packet, strict=False)
+    new_pdf = PdfFileReader(packet, strict=False, warndest=os.devnull)
 
     # generate the pdf
     page = empty_form.getPage(0)
@@ -168,7 +191,7 @@ def fill_subscription_form(data, base_dir):
     return page
 
 
-def fill_pdf(data, output_dir=None, strict=False):
+def fill_pdf(data, output_dir=None, strict=False, verbose=False):
     """
     'empty_form.pdf' must be in the same directory of this script
     the script must be called with the target 'data.json' as the only argument
@@ -232,8 +255,10 @@ def fill_pdf(data, output_dir=None, strict=False):
         try:
             append_pdf(join(signed_forms_dir, f), _output)
         except StudentRejectedException:
-            print "\n{0} submitted something ({1}) " \
-                  "that I don't like very much".format(student_name, f)
+            bastards.append(join(signed_forms_dir, f))
+            if verbose:
+                print "Unsupported file found: {0} , submitted by {1}"\
+                    .format(join(signed_forms_dir, f), student_name)
 
     output_stream = file(output_file, 'wb')
     _output.write(output_stream)
@@ -241,15 +266,18 @@ def fill_pdf(data, output_dir=None, strict=False):
 
 
 def fill_recursive(directory, output_dir, verbose=False, strict=False):
+    """
+    Given a directory, search recursively in that directory for 'data.json'
+    files, and generate the related pdf.
+    """
     for f in os.listdir(directory):
         _file = join(directory, f)
 
         if isfile(_file) and f == 'data.json':
             if verbose:
                 print '\n+++ Elaborating file {}\n'.format(_file)
-                # print '* Please ignore the warnings below :-) *'
             try:
-                fill_pdf(_file, output_dir, strict=strict)
+                fill_pdf(_file, output_dir, strict=strict, verbose=verbose)
             except KeyError, e:
                 print 'Missing json field in {0}. PDF generation skipped. ' \
                       'Message: {1}'.format(_file, e.message)
@@ -279,7 +307,9 @@ if __name__ == '__main__':
 
     args = parser.parse_args()
 
-    errors = []
+    errors = []  # generic errors
+    bastards = []  # people who submitted unsupported files (.doc, .odt, ...)
+
     if len(sys.argv) <= 1:
         parser.print_help()
         sys.exit(0)
@@ -301,15 +331,21 @@ if __name__ == '__main__':
         for json_path in args.data:
             # noinspection PyBroadException
             try:
-                fill_pdf(json_path, args.output_dir or None, args.strict)
+                fill_pdf(json_path, args.output_dir or None,
+                         args.strict, verbose=args.verbose)
             except Exception, e:
                 if args.verbose:
                     print 'Error: {0}'.format(e.message)
                 errors.append(dirname(json_path))
 
-    if errors:
+    if errors:  # generic problems
         path = join(args.output_dir or abspath(dirname(__file__)), 'errors.log')
         with open(path, 'w') as f:
             f.write('\n'.join(errors))
+    if bastards:  # unsupported files found
+        path = join(args.output_dir or abspath(dirname(__file__)),
+                    'unsupported_files_found.log')
+        with open(path, 'w') as f:
+            f.write('\n'.join(bastards))
 
     print '\nDone!\n'
