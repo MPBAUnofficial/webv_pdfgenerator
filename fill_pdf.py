@@ -14,12 +14,17 @@ import argparse
 
 
 class StudentRejectedException(Exception):
+    """
+    Why should you accept someone who's not able to create a freaking pdf?
+    """
     pass
 
 
 def append_pdf(pdf_in_path, pdf_out):
+    """
+
+    """
     pdf_in = file_to_pdf(pdf_in_path)
-    # pdf_in = PdfFileReader(file(pdf_in_path, 'rb'))
     for page_num in range(pdf_in.numPages):
         pdf_out.addPage(pdf_in.getPage(page_num))
 
