@@ -9,11 +9,15 @@ import os
 from os.path import abspath, join, dirname, isfile, isdir, exists, basename
 import sys
 import magic
+import mimetypes
 from PIL import Image
 import zipfile
 import rarfile
 import argparse
 import contextlib
+import subprocess
+import tempfile
+import shutil
 
 
 class StudentRejectedException(Exception):
@@ -55,7 +59,7 @@ def archive_to_pdf(path, mimetype):
             for obj in zf.namelist():
                 if not zf_isdir(zf, obj):
                     files.append(zf.read(obj, 'rb'))
-    elif mimetype == 'application/x-rar':
+    elif mimetype in ('application/x-rar', 'application/rar'):
         with rarfile.RarFile(path, 'r') as rf:
             for obj in rf.namelist():
                 if not zf_isdir(rf, obj):
@@ -78,6 +82,21 @@ def archive_to_pdf(path, mimetype):
     return PdfFileReader(output_stream, strict=False)
 
 
+def shit_to_pdf(path):
+    """
+    Helper method for file_to_pdf.
+    Convert a word/openoffice document to pdf (the bad way).
+    """
+    path_without_ext = '.'.join(path.split('.')[:-1])
+
+    # convert file to pdf using libreoffice, and put it in a temporary folder.
+    subprocess.call(['libreoffice', '--headless', '--convert-to', 'pdf',
+                     '--outdir', tmp_dir, path])
+    return PdfFileReader(
+        open('{0}.pdf'.format(join(tmp_dir, basename(path_without_ext))), 'rb'),
+        strict=False)
+
+
 def file_to_pdf(file_in, is_buffer=False):
     """
     given a generic file (image, pdf, archive) return the PDF containing that
@@ -89,6 +108,8 @@ def file_to_pdf(file_in, is_buffer=False):
         file_in = StringIO.StringIO(file_in)
     else:  # then it's a path
         mimetype = magic.from_file(file_in, mime=True)
+        if mimetype is None:  # python-magic is not perfect
+            mimetype = mimetypes.guess_type(file_in)[0]
 
     if mimetype == 'application/pdf':
         if is_buffer:
@@ -114,8 +135,18 @@ def file_to_pdf(file_in, is_buffer=False):
         packet.seek(0)
         return PdfFileReader(packet, strict=False)
 
-    if mimetype in ('application/zip', 'application/x-rar'):
+    if mimetype in ('application/zip', 'application/x-rar', 'application/rar'):
         return archive_to_pdf(file_in, mimetype)
+
+    libreoffice_mime_types = (
+        'application/vnd.openxmlformats-officedocument'
+        '.wordprocessingml.document',  # docx
+        'application/msword',  # doc
+        'application/rtf',  # rtf
+        'application/vnd.oasis.opendocument.text',  # odt
+    )
+    if is_libreoffice_installed and mimetype in libreoffice_mime_types:
+        return shit_to_pdf(file_in)
 
     raise StudentRejectedException()
 
@@ -364,5 +395,21 @@ if __name__ == '__main__':
     errors = []  # generic errors
     bastards = []  # people who submitted unsupported files (.doc, .odt, ...)
 
+    tmp_dir = join(tempfile.gettempdir(), 'webv_pdf_generator')
+
+    # try to determine whether libreoffice is installed or not
+    is_libreoffice_installed = None
+    try:
+        subprocess.check_call(['libreoffice', '-h'])
+        is_libreoffice_installed = True
+    except subprocess.CalledProcessError:
+        is_libreoffice_installed = False
+        print 'It appears that libreoffice is not installed on this system.'
+        print 'I need it to convert some files to pdf,' \
+              ' so I\'m ignoring those files.'
+
     with nostderr():
         main()
+
+    # delete temporary files
+    shutil.rmtree(tmp_dir, ignore_errors=True)
