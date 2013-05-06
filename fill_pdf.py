@@ -91,8 +91,9 @@ def shit_to_pdf(path):
     path_without_ext = '.'.join(path.split('.')[:-1])
 
     # convert file to pdf using libreoffice, and put it in a temporary folder.
-    subprocess.call(['libreoffice', '--headless', '--convert-to', 'pdf',
-                     '--outdir', tmp_dir, path])
+    with open(devnull, 'w') as dn:
+        subprocess.call(['libreoffice', '--headless', '--convert-to', 'pdf',
+                         '--outdir', tmp_dir, path], stdout=dn, stderr=dn)
     return PdfFileReader(
         open('{0}.pdf'.format(join(tmp_dir, basename(path_without_ext))), 'rb'),
         strict=False)
@@ -232,8 +233,7 @@ def fill_subscription_form(data, base_dir, user_id):
         # ...and draw it
         can.drawImage(ImageReader(photo), left, top, preserveAspectRatio=True)
 
-        # can.drawImage(photo_path, 354.5, 526.7, 137, 152)
-        can.save()
+    can.save()
 
     # move to the beginning of the StringIO buffer
     packet.seek(0)
@@ -333,13 +333,17 @@ def fill_recursive(directory, output_dir, verbose=False, strict=False):
                 print '\n+++ Elaborating file {}\n'.format(_file)
             try:
                 fill_pdf(_file, output_dir, strict=strict, verbose=verbose)
+                sys.stdout.write('.')
+                sys.stdout.flush()
             except KeyError, e:
-                print 'Missing json field in {0}. PDF generation skipped. ' \
-                      'Message: {1}'.format(_file, e.message)
+                if verbose:
+                    print 'Missing json field in {0}. PDF generation skipped.' \
+                        'Message: {1}'.format(_file, e.message)
                 errors.append('{0} : {1}'.format(dirname(_file), e.message))
             except Exception, e:
-                print 'Something went wrong with {0}: {1}'\
-                    .format(_file, e.message)
+                if verbose:
+                    print 'Something went wrong with {0}: {1}'\
+                        .format(_file, e.message)
                 errors.append('{0} : {1}'.format(dirname(_file), e.message))
 
         if isdir(_file):
@@ -406,7 +410,7 @@ def nostderr():
     """
     Prevent pyPdf from spamming on the stderr.
     """
-    save_stderr = sys.stdout
+    save_stderr = sys.stderr
     sys.stderr = StringIO.StringIO()
     yield
     sys.stderr = save_stderr
@@ -433,7 +437,20 @@ if __name__ == '__main__':
               ' so I\'m ignoring those files.'
 
     with nostderr():
+        print 'Processing',
         main()
 
     # delete temporary files
     shutil.rmtree(tmp_dir, ignore_errors=True)
+    sys.stdout.write('Done')
+    sys.stdout.flush()
+
+    if errors or bastards:
+        print '\n\nNotes:\n'
+
+    if errors:
+        print '* Errors occoured during generation of some PDFs.' \
+              ' More info in "error.log" file'
+    if bastards:
+        print '* Someone submitted unsupported (or invalid) files. More info ' \
+              'in "unsupported_files.log" file'
