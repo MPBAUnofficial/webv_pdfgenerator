@@ -6,6 +6,7 @@ from reportlab.lib.pagesizes import A4
 from reportlab.lib.utils import ImageReader
 import json
 import os
+from os import devnull
 from os.path import abspath, join, dirname, isfile, isdir, exists, basename
 import sys
 import magic
@@ -151,7 +152,7 @@ def file_to_pdf(file_in, is_buffer=False):
     raise StudentRejectedException()
 
 
-def fill_subscription_form(data, base_dir):
+def fill_subscription_form(data, base_dir, user_id):
     """
     fill the subscription form (file 'empty_form.pdf') with user data.
     """
@@ -162,6 +163,14 @@ def fill_subscription_form(data, base_dir):
 
     # fill it with user data
     # Yeah, the coordinates are hard-coded... FML
+
+    # red header
+    can.setFillColor('red')
+    can.drawString(60, 670.0, '{0} {1} / {2}'.format(
+        data['profile']['last_name'], data['profile']['first_name'], user_id))
+
+    can.setFillColor('black')
+    can.setFontSize(10)
 
     # last name
     can.drawString(60, 470.0, data['profile']['last_name'])
@@ -204,15 +213,27 @@ def fill_subscription_form(data, base_dir):
 
     # try to guess the path of the profile picture
     if 'photo' in data['profile']:
-        photo = data['profile']['photo'].split('/')[-1]
+        photo_path = data['profile']['photo'].split('/')[-1]
     else:
-        photo = guess_photo_path()
+        photo_path = guess_photo_path()
 
-    if photo is not None:
-        photo = join(base_dir, photo)
-        can.drawImage(photo, 354.5, 526.7, 137, 152)
+    if photo_path is not None:
+        photo_path = join(base_dir, photo_path)
+        photo = Image.open(photo_path)
+        W, H = 137, 152
 
-    can.save()
+        # if the image is too large, then resize it to fill in an A4 page
+        if photo.size[0] > W or photo.size[1] > H:
+            photo.thumbnail(map(int, (W, H)), Image.ANTIALIAS)
+
+        # calculate the left and top margin to center the image in the page
+        left, top = 354.5 + (W - photo.size[0]) / 2, 526.7 + (H - photo.size[1]) / 2
+
+        # ...and draw it
+        can.drawImage(ImageReader(photo), left, top, preserveAspectRatio=True)
+
+        # can.drawImage(photo_path, 354.5, 526.7, 137, 152)
+        can.save()
 
     # move to the beginning of the StringIO buffer
     packet.seek(0)
@@ -224,7 +245,7 @@ def fill_subscription_form(data, base_dir):
     return page
 
 
-def fill_pdf(data, output_dir=None, strict=False, verbose=False):
+def fill_pdf(data_json_path, output_dir=None, strict=False, verbose=False):
     """
     'empty_form.pdf' must be in the same directory of this script
     the script must be called with the target 'data.json' as the only argument
@@ -232,20 +253,20 @@ def fill_pdf(data, output_dir=None, strict=False, verbose=False):
     (the ones in the first_form tuple below) the pdf generation will stop.
     """
     # load json data
-    with open(data, 'r') as f:
-        _data = json.loads(f.read())
+    with open(data_json_path, 'r') as f:
+        data = json.loads(f.read())
 
     _output = PdfFileWriter()
-    base_dir = dirname(abspath(data))
+    base_dir = dirname(abspath(data_json_path))
 
     output_dir = abspath(output_dir) if output_dir is not None \
         else dirname(abspath(__file__))
-    student_name = '{} {}'.format(_data['profile']['first_name'],
-                                  _data['profile']['last_name'])
+    student_name = '{} {}'.format(data['profile']['first_name'],
+                                  data['profile']['last_name'])
     output_file = join(output_dir, student_name + '.pdf')
     if output_file in os.listdir(output_dir):  # just a simple check
         output_file = '{} {}{}'.format(student_name,
-                                       _data['profile']['email'], '.pdf')
+                                       data['profile']['email'], '.pdf')
 
     # the resulting pdf will be:
     # subscription form,
@@ -259,7 +280,8 @@ def fill_pdf(data, output_dir=None, strict=False, verbose=False):
     signed_forms_dir = join(base_dir, 'signed-forms')
 
     # set the first page as the (automagically filled) subscription form
-    subscription_form = fill_subscription_form(_data, base_dir)
+    user_id = basename(dirname(data_json_path))  # This SHOULD be ok
+    subscription_form = fill_subscription_form(data, base_dir, user_id)
     _output.addPage(subscription_form)
 
     def _append_file(file_name, allowed_extensions):
@@ -314,11 +336,11 @@ def fill_recursive(directory, output_dir, verbose=False, strict=False):
             except KeyError, e:
                 print 'Missing json field in {0}. PDF generation skipped. ' \
                       'Message: {1}'.format(_file, e.message)
-                errors.append(dirname(_file))
+                errors.append('{0} : {1}'.format(dirname(_file), e.message))
             except Exception, e:
                 print 'Something went wrong with {0}: {1}'\
                     .format(_file, e.message)
-                errors.append(dirname(_file))
+                errors.append('{0} : {1}'.format(dirname(_file), e.message))
 
         if isdir(_file):
             if verbose:
@@ -367,7 +389,7 @@ def main():
             except Exception, e:
                 if args.verbose:
                     print 'Error: {0}'.format(e.message)
-                errors.append(dirname(json_path))
+                errors.append('{0} : {1}'.format(dirname(json_path), e.message))
 
     if errors:  # generic problems
         path = join(args.output_dir or abspath(dirname(__file__)), 'errors.log')
@@ -400,8 +422,10 @@ if __name__ == '__main__':
     # try to determine whether libreoffice is installed or not
     is_libreoffice_installed = None
     try:
-        subprocess.check_call(['libreoffice', '-h'])
-        is_libreoffice_installed = True
+        with open(devnull, 'w') as stdout:  # don't spam on the stdout
+            # probably there's a better way to accomplish this, but who cares?
+            subprocess.check_call(['libreoffice', '-h'], stdout=stdout)
+            is_libreoffice_installed = True
     except subprocess.CalledProcessError:
         is_libreoffice_installed = False
         print 'It appears that libreoffice is not installed on this system.'
