@@ -47,7 +47,7 @@ def archive_to_pdf(path, mimetype):
     def zf_isdir(zf, name):
         """
         Return true if the given object inside the zipfile is a directory.
-        (using os.listdir with zipfiles is not possible).
+        (using os.path.isdir with zipfiles is not possible).
         """
         name = name.replace('\\', '/')  # fucking Windows
         return any(x.replace('\\', '/').startswith("%s/" % name.rstrip("/"))
@@ -87,6 +87,7 @@ def shit_to_pdf(path):
     """
     Helper method for file_to_pdf.
     Convert a word/openoffice document to pdf (the bad way).
+    LibreOffice is required.
     """
     path_without_ext = '.'.join(path.split('.')[:-1])
 
@@ -261,12 +262,14 @@ def fill_pdf(data_json_path, output_dir=None, strict=False, verbose=False):
 
     output_dir = abspath(output_dir) if output_dir is not None \
         else dirname(abspath(__file__))
-    student_name = '{} {}'.format(data['profile']['first_name'],
-                                  data['profile']['last_name'])
-    output_file = join(output_dir, student_name + '.pdf')
+    student_name = '{0}_{1}'.format(data['profile']['first_name'],
+                                    data['profile']['last_name'])
+    user_id = basename(dirname(data_json_path))  # This SHOULD be ok
+    output_file = join(output_dir, '{0}-{1}.pdf'.format(
+        user_id, student_name.lower().replace(' ', '_')))
     if output_file in os.listdir(output_dir):  # just a simple check
-        output_file = '{} {}{}'.format(student_name,
-                                       data['profile']['email'], '.pdf')
+        output_file = '{0}-{1}-{2}.pdf'\
+            .format(student_name, data['profile']['email'])
 
     # the resulting pdf will be:
     # subscription form,
@@ -280,7 +283,6 @@ def fill_pdf(data_json_path, output_dir=None, strict=False, verbose=False):
     signed_forms_dir = join(base_dir, 'signed-forms')
 
     # set the first page as the (automagically filled) subscription form
-    user_id = basename(dirname(data_json_path))  # This SHOULD be ok
     subscription_form = fill_subscription_form(data, base_dir, user_id)
     _output.addPage(subscription_form)
 
@@ -401,7 +403,7 @@ def main():
             f.write('\n'.join(errors))
     if bastards:  # unsupported files found
         path = join(args.output_dir or abspath(dirname(__file__)),
-                    'unsupported_files_found.log')
+                    'unsupported_files.log')
         with open(path, 'w') as f:
             f.write('\n'.join(bastards))
 
