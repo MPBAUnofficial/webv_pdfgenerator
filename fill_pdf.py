@@ -168,7 +168,7 @@ def fill_subscription_form(data, base_dir, user_id):
 
     # red header
     can.setFillColor('red')
-    can.drawString(60, 670.0, '{0} {1} / {2}'.format(
+    can.drawString(60, 670.0, u'{0} {1} / {2}'.format(
         data['profile']['last_name'], data['profile']['first_name'], user_id))
 
     can.setFillColor('black')
@@ -185,7 +185,7 @@ def fill_subscription_form(data, base_dir, user_id):
     can.drawString(60, 382.1, data['profile']['nationality'])
     # address
     _a = data['Home Address']
-    address = '{0}{1}, {2}, {3}, {4}, {5}'.format(
+    address = u'{0}{1}, {2}, {3}, {4}, {5}'.format(
         _a['Street 1'], ', ' + _a['Street 2'] if _a['Street 2'] else '',
         _a['City'], _a['State/Province'], _a['Country'], _a['Postal code'],
     )
