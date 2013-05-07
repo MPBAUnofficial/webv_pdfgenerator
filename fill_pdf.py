@@ -224,12 +224,13 @@ def fill_subscription_form(data, base_dir, user_id):
         photo = Image.open(photo_path)
         W, H = 137, 152
 
-        # if the image is too large, then resize it to fill in an A4 page
+        # if the image is too large, then resize it to fill in the box
         if photo.size[0] > W or photo.size[1] > H:
             photo.thumbnail(map(int, (W, H)), Image.ANTIALIAS)
 
-        # calculate the left and top margin to center the image in the page
-        left, top = 354.5 + (W - photo.size[0]) / 2, 526.7 + (H - photo.size[1]) / 2
+        # calculate the left and top margin to center the image in the box
+        left, top = 354.5 + (W - photo.size[0]) / 2, \
+            526.7 + (H - photo.size[1]) / 2
 
         # ...and draw it
         can.drawImage(ImageReader(photo), left, top, preserveAspectRatio=True)
