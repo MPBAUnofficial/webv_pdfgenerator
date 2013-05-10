@@ -408,6 +408,7 @@ def main():
         with open(path, 'w') as f:
             f.write('\n'.join(bastards))
 
+
 @contextlib.contextmanager
 def nostderr():
     """
@@ -422,7 +423,7 @@ def nostderr():
 if __name__ == '__main__':
 
     errors = []  # generic errors
-    bastards = []  # people who submitted unsupported files (.doc, .odt, ...)
+    bastards = []  # people who submitted unsupported files
 
     tmp_dir = join(tempfile.gettempdir(), 'webv_pdf_generator')
 
