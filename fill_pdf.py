@@ -121,6 +121,7 @@ def file_to_pdf(file_in, is_buffer=False):
                              strict=False)
 
     if mimetype and mimetype.split('/')[0] == 'image':
+        # this should work with both filename and buffers
         image = Image.open(file_in)
         packet = StringIO.StringIO()
         can = canvas.Canvas(packet, A4)
@@ -279,7 +280,9 @@ def fill_pdf(data_json_path, output_dir=None, strict=False, verbose=False):
     first_forms = ('Code of Conduct', 'Parent Agreement',
                    'Assignment of Laptop', 'Media Consent Form')
 
-    allowed_extensions = ('pdf', 'jpeg', 'jpg', 'png', 'tiff', 'gif')
+    allowed_extensions = ['pdf', 'jpeg', 'jpg', 'png', 'tiff', 'gif']
+    # handle upper-case extensions
+    allowed_extensions += map(lambda s: s.upper(), allowed_extensions)
 
     signed_forms_dir = join(base_dir, 'signed-forms')
 
@@ -333,7 +336,7 @@ def fill_recursive(directory, output_dir, verbose=False, strict=False):
 
         if isfile(_file) and f == 'data.json':
             if verbose:
-                print '\n+++ Elaborating file {}\n'.format(_file)
+                print '\n+++ Elaborating file {0}\n'.format(_file)
             try:
                 fill_pdf(_file, output_dir, strict=strict, verbose=verbose)
                 sys.stdout.write('.')
@@ -351,7 +354,7 @@ def fill_recursive(directory, output_dir, verbose=False, strict=False):
 
         if isdir(_file):
             if verbose:
-                print 'Checking dir {}'.format(_file)
+                print 'Checking dir {0}'.format(_file)
             fill_recursive(_file, output_dir, verbose=verbose, strict=strict)
 
 
@@ -376,7 +379,7 @@ def main():
 
     if args.output_dir:
         if not exists(abspath(args.output_dir)):
-            print 'Error: destination dir {} does not exist.'\
+            print 'Error: destination dir {0} does not exist.'\
                 .format(abspath(args.output_dir))
             sys.exit(1)
 
