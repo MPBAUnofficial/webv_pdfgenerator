@@ -37,6 +37,18 @@ def append_pdf(pdf_in_path, pdf_out):
         pdf_out.addPage(pdf_in.getPage(page_num))
 
 
+def buffer_to_file(buff, file_name):
+    """
+    Write a buffer on a temporary file and return the path of the file.
+    """
+    global tmp_dir
+    file_name = basename(file_name)  # make sure it's just the name
+    path = join(tmp_dir, file_name)
+    with open(path, 'w') as f:
+        f.write(buff)
+    return path
+
+
 def archive_to_pdf(path, mimetype):
     """
     Helper method for file_to_pdf.
@@ -53,25 +65,26 @@ def archive_to_pdf(path, mimetype):
         return any(x.replace('\\', '/').startswith("%s/" % name.rstrip("/"))
                    for x in zf.namelist())
 
-    files = []  # the files (not dirs) contained into the archive
+    files = {}  # the files (not dirs) contained into the archive
 
     if mimetype == 'application/zip':
         with zipfile.ZipFile(path, 'r') as zf:
             for obj in zf.namelist():
                 if not zf_isdir(zf, obj):
-                    files.append(zf.read(obj, 'rb'))
+                    files[object] = zf.read(obj, 'rb')
+
     elif mimetype in ('application/x-rar', 'application/rar'):
         with rarfile.RarFile(path, 'r') as rf:
             for obj in rf.namelist():
                 if not zf_isdir(rf, obj):
-                    files.append(rf.read(obj, 'rb'))
+                    files[obj] = rf.read(obj, 'rb')
 
     # create a void pdf
     output = PdfFileWriter()
 
     # insert images in a pdf and append it
     for f in files:
-        pdf = file_to_pdf(f, is_buffer=True)
+        pdf = file_to_pdf(files[f], True, f)
 
         # append it to the resulting pdf
         for page_num in range(pdf.numPages):
@@ -100,10 +113,11 @@ def shit_to_pdf(path):
         strict=False)
 
 
-def file_to_pdf(file_in, is_buffer=False):
+def file_to_pdf(file_in, is_buffer=False, file_name=None):
     """
     given a generic file (image, pdf, archive) return the PDF containing that
     file (adapted in order to fill properly).
+    file_in can be both a path or a buffer
     """
 
     if is_buffer:
@@ -150,6 +164,9 @@ def file_to_pdf(file_in, is_buffer=False):
         'application/vnd.oasis.opendocument.text',  # odt
     )
     if is_libreoffice_installed and mimetype in libreoffice_mime_types:
+        if is_buffer:
+            file_in.seek(0)
+            return shit_to_pdf(buffer_to_file(file_in.read(), file_name))
         return shit_to_pdf(file_in)
 
     raise StudentRejectedException()
@@ -346,11 +363,15 @@ def fill_recursive(directory, output_dir, verbose=False, strict=False):
                     print 'Missing json field in {0}. PDF generation skipped.' \
                         'Message: {1}'.format(_file, e.message)
                 errors.append('{0} : {1}'.format(dirname(_file), e.message))
+                sys.stdout.write('e')
+                sys.stdout.flush()
             except Exception, e:
                 if verbose:
                     print 'Something went wrong with {0}: {1}'\
                         .format(_file, e.message)
                 errors.append('{0} : {1}'.format(dirname(_file), e.message))
+                sys.stdout.write('e')
+                sys.stdout.flush()
 
         if isdir(_file):
             if verbose:
@@ -429,6 +450,8 @@ if __name__ == '__main__':
     bastards = []  # people who submitted unsupported files
 
     tmp_dir = join(tempfile.gettempdir(), 'webv_pdf_generator')
+    if not exists(tmp_dir):  # ensure that the directory does exist
+        os.makedirs(tmp_dir)
 
     # try to determine whether libreoffice is installed or not
     is_libreoffice_installed = None
