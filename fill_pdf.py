@@ -65,19 +65,17 @@ def archive_to_pdf(path, mimetype):
         return any(x.replace('\\', '/').startswith("%s/" % name.rstrip("/"))
                    for x in zf.namelist())
 
-    files = {}  # the files (not dirs) contained into the archive
+    zf = None
 
     if mimetype == 'application/zip':
-        with zipfile.ZipFile(path, 'r') as zf:
-            for obj in zf.namelist():
-                if not zf_isdir(zf, obj):
-                    files[object] = zf.read(obj, 'rb')
-
+        zf = zipfile.ZipFile(path, 'r')
     elif mimetype in ('application/x-rar', 'application/rar'):
-        with rarfile.RarFile(path, 'r') as rf:
-            for obj in rf.namelist():
-                if not zf_isdir(rf, obj):
-                    files[obj] = rf.read(obj, 'rb')
+        zf = rarfile.RarFile(path, 'r')
+
+    with zf as zf:
+        # the files (not dirs) contained into the archive
+        files = {obj: zf.read(obj, 'rb') for obj in zf.namelist()
+                 if not zf_isdir(zf, obj) and not obj.startswith('__MACOSX')}
 
     # create a void pdf
     output = PdfFileWriter()
@@ -332,7 +330,7 @@ def fill_pdf(data_json_path, output_dir=None, strict=False, verbose=False):
     for f in remaining_files:
         try:
             append_pdf(join(signed_forms_dir, f), _output)
-        except StudentRejectedException:
+        except (StudentRejectedException, TypeError):
             bastards.append(join(signed_forms_dir, f))
             if verbose:
                 print "Unsupported file found: {0} , submitted by {1}"\
